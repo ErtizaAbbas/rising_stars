@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Students &amp; goals — Rising Stars staff portal</title>
+<link rel="icon" type="image/png" href="../assets/img/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&amp;family=Nunito+Sans:wght@400;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="portal.css">
+</head>
+<body>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main class="content">
+<div class="page-head"><div><span class="eyebrow">Coordinators only</span><h1>Students &amp; goals</h1></div></div>
+
+<div class="cols">
+<div class="main-col">
+<section class="card">
+<h2>Students</h2>
+<div class="table-wrap"><table><thead><tr><th>Code</th><th>First name</th><th>Instructors</th><th>Goals</th><th></th></tr></thead><tbody id="list"></tbody></table></div>
+</section>
+
+<section class="card" id="detail" hidden>
+<h2 id="d-title">Student</h2>
+<div class="field"><span class="label">Assigned instructors</span><div class="choices" id="d-instructors"></div><span class="hint">Tap a name to assign or unassign. Instructors only see students assigned to them.</span></div>
+<div class="field"><span class="label">IEP goals</span><div id="d-goals" style="display:flex;flex-direction:column;gap:10px"></div></div>
+<div class="grid">
+<div class="field"><label for="g-area">Area</label><select id="g-area"><option>Communication</option><option>Speech &amp; language</option><option>Fine motor</option><option>Gross motor</option><option>Sensory</option><option>Behaviour</option><option>Social skills</option><option>Emotional regulation</option><option>Academic</option><option>Life skills</option><option>Vocational</option></select></div>
+<div class="field" style="grid-column: span 2"><label for="g-text">New goal (measurable)</label><input id="g-text" type="text" placeholder="e.g. Uses 2-word phrases to request items in 4 of 5 chances"></div>
+</div>
+<div class="btn-row"><button class="btn" type="button" id="g-add">Add goal</button><button class="btn secondary" type="button" id="d-active"></button></div>
+</section>
+</div>
+
+<aside class="side-col">
+<section class="card">
+<h2>Add a student</h2>
+<div class="field"><label for="n-code">Student code</label><input id="n-code" type="text" placeholder="e.g. RS-015"></div>
+<div class="field"><label for="n-name">First name</label><input id="n-name" type="text"></div>
+<div class="field"><label for="n-dob">Date of birth (optional)</label><input id="n-dob" type="date"></div>
+<button class="btn" type="button" id="n-add">Add student</button>
+<p class="hint">Keep it minimal: a code and first name are enough. Medical details stay in the paper file for now.</p>
+</section>
+<section class="card">
+<h2>Staff</h2>
+<div id="staff" style="display:flex;flex-direction:column;gap:10px"></div>
+<p class="hint">New staff are invited from Supabase (Authentication → Users → Invite). They appear here after accepting.</p>
+</section>
+</aside>
+</div>
+</main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="portal.js"></script>
+<script>
+(async function () {
+  var me = await RS.requireAuth({ active: 'students', coordinatorOnly: true });
+  var db = RS.db, $ = RS.$, esc = RS.esc;
+  var students = [], staff = [], links = [], goals = [], current = null;
+
+  async function load() {
+    var a = await db.from('students').select('*').order('student_code');
+    var b = await db.from('profiles').select('id, full_name, role').order('full_name');
+    var c = await db.from('student_instructors').select('*');
+    var d = await db.from('iep_goals').select('*').order('created_at');
+    students = a.data || []; staff = b.data || []; links = c.data || []; goals = d.data || [];
+    render();
+  }
+
+  function render() {
+    $('#list').innerHTML = students.length ? students.map(function (s) {
+      var who = links.filter(function (l) { return l.student_id === s.id; }).map(function (l) {
+        var p = staff.find(function (x) { return x.id === l.instructor_id; }); return p ? p.full_name : '';
+      }).filter(Boolean).join(', ');
+      var n = goals.filter(function (g) { return g.student_id === s.id && g.active; }).length;
+      return '<tr' + (s.active ? '' : ' style="opacity:.55"') + '><td><strong>' + esc(s.student_code) + '</strong></td><td>' + esc(s.first_name) + '</td><td>' + (esc(who) || '<span class="hint">None</span>') + '</td><td>' + n + '</td><td><button class="btn small secondary" type="button" data-open="' + s.id + '">Manage</button></td></tr>';
+    }).join('') : '<tr><td colspan="5" class="empty">No students yet. Add the first one on the right.</td></tr>';
+    RS.$all('[data-open]').forEach(function (b) { b.addEventListener('click', function () { current = b.getAttribute('data-open'); renderDetail(); $('#detail').scrollIntoView({ behavior: 'smooth' }); }); });
+
+    var ROLES = ['instructor', 'coordinator', 'admin'];
+    $('#staff').innerHTML = staff.map(function (p) {
+      return '<div class="row-between" style="align-items:center"><span style="color:#1E2A3A;font-weight:700">' + esc(p.full_name) + '</span><select data-role="' + p.id + '" aria-label="Role for ' + esc(p.full_name) + '" style="width:auto;height:40px"' + (p.id === me.user.id ? ' disabled' : '') + '>' + ROLES.map(function (r) { return '<option' + (r === p.role ? ' selected' : '') + '>' + r + '</option>'; }).join('') + '</select></div>';
+    }).join('');
+    RS.$all('[data-role]').forEach(function (sel) {
+      sel.addEventListener('change', async function () {
+        var res = await db.from('profiles').update({ role: sel.value }).eq('id', sel.getAttribute('data-role'));
+        RS.toast(res.error ? res.error.message : 'Role updated', !!res.error);
+        load();
+      });
+    });
+    if (current) renderDetail();
+  }
+
+  function renderDetail() {
+    var s = students.find(function (x) { return x.id === current; });
+    if (!s) return;
+    $('#detail').hidden = false;
+    $('#d-title').textContent = s.student_code + ' · ' + s.first_name;
+    $('#d-active').textContent = s.active ? 'Mark as left (archive)' : 'Mark as active again';
+
+    var box = $('#d-instructors'); box.innerHTML = '';
+    staff.forEach(function (p) {
+      var on = links.some(function (l) { return l.student_id === s.id && l.instructor_id === p.id; });
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'choice' + (on ? ' on' : ''); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.textContent = p.full_name;
+      b.addEventListener('click', async function () {
+        var res = on
+          ? await db.from('student_instructors').delete().eq('student_id', s.id).eq('instructor_id', p.id)
+          : await db.from('student_instructors').insert({ student_id: s.id, instructor_id: p.id });
+        if (res.error) RS.toast(res.error.message, true);
+        load();
+      });
+      box.appendChild(b);
+    });
+
+    var mine = goals.filter(function (g) { return g.student_id === s.id; });
+    $('#d-goals').innerHTML = mine.length ? mine.map(function (g) {
+      return '<div class="goal" style="padding:14px' + (g.active ? '' : ';opacity:.55') + '"><div class="goal-head"><span>' + esc(g.goal_text) + '</span><span style="display:flex;gap:8px;align-items:center"><span class="pill pill-blue">' + esc(g.area) + '</span><button class="btn small secondary" type="button" data-goal="' + g.id + '">' + (g.active ? 'Mark achieved' : 'Reopen') + '</button></span></div></div>';
+    }).join('') : '<p class="empty">No goals yet.</p>';
+    RS.$all('[data-goal]').forEach(function (b) {
+      b.addEventListener('click', async function () {
+        var g = goals.find(function (x) { return x.id === b.getAttribute('data-goal'); });
+        var res = await db.from('iep_goals').update({ active: !g.active }).eq('id', g.id);
+        if (res.error) RS.toast(res.error.message, true); else RS.toast(g.active ? 'Goal marked achieved' : 'Goal reopened');
+        load();
+      });
+    });
+  }
+
+  $('#g-add').addEventListener('click', async function () {
+    var text = $('#g-text').value.trim();
+    if (!current || !text) { RS.toast('Write the goal first.', true); return; }
+    var res = await db.from('iep_goals').insert({ student_id: current, area: $('#g-area').value, goal_text: text });
+    if (res.error) { RS.toast(res.error.message, true); return; }
+    $('#g-text').value = ''; RS.toast('Goal added'); load();
+  });
+
+  $('#d-active').addEventListener('click', async function () {
+    var s = students.find(function (x) { return x.id === current; });
+    var res = await db.from('students').update({ active: !s.active }).eq('id', s.id);
+    if (res.error) RS.toast(res.error.message, true); else load();
+  });
+
+  $('#n-add').addEventListener('click', async function () {
+    var row = { student_code: $('#n-code').value.trim().toUpperCase(), first_name: $('#n-name').value.trim(), date_of_birth: $('#n-dob').value || null };
+    if (!row.student_code || !row.first_name) { RS.toast('Enter a code and first name.', true); return; }
+    var res = await db.from('students').insert(row).select().single();
+    if (res.error) { RS.toast(res.error.code === '23505' ? 'That student code is already used.' : res.error.message, true); return; }
+    $('#n-code').value = $('#n-name').value = $('#n-dob').value = '';
+    current = res.data.id; RS.toast('Student added — now assign instructors and goals'); load();
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

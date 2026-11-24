@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Set your password — Rising Stars</title>
+<link rel="icon" type="image/png" href="../assets/img/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&amp;family=Nunito+Sans:wght@400;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="portal.css">
+</head>
+<body>
+<main class="login-wrap">
+<form class="login-card" id="setpw" novalidate>
+<img src="../assets/img/logo.png" alt="Rising Stars">
+<h1>Set your password</h1>
+<p>Choose a password for your Rising Stars staff account.</p>
+<div class="field"><label for="pw1">New password (at least 8 characters)</label><input id="pw1" type="password" autocomplete="new-password" required></div>
+<div class="field"><label for="pw2">Type it again</label><input id="pw2" type="password" autocomplete="new-password" required></div>
+<p class="error-msg" id="err" role="alert"></p>
+<button class="btn" type="submit" id="go">Save password</button>
+</form>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="portal.js"></script>
+<script>
+(async function () {
+  if (!RS.configured) { RS.notConfigured(); return; }
+  var db = RS.db, err = RS.$('#err');
+  // The invite / reset link signs the person in; wait briefly for it.
+  await new Promise(function (r) { setTimeout(r, 600); });
+  var s = (await db.auth.getSession()).data.session;
+  if (!s) { err.textContent = 'This link has expired. Ask the administrator to send a new one.'; RS.$('#go').disabled = true; }
+
+  RS.$('#setpw').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var a = RS.$('#pw1').value, b = RS.$('#pw2').value;
+    if (a.length < 8) { err.textContent = 'Use at least 8 characters.'; return; }
+    if (a !== b) { err.textContent = 'The two passwords do not match.'; return; }
+    var res = await db.auth.updateUser({ password: a });
+    if (res.error) { err.textContent = res.error.message; return; }
+    RS.toast('Password saved');
+    setTimeout(function () { location.replace('dashboard.html'); }, 800);
+  });
+})();
+</script>
+</body>
+</html>

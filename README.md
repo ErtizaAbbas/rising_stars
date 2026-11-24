@@ -12,11 +12,13 @@ Plain HTML/CSS/JS — no build step. Hosted on GitHub Pages, domain on Namecheap
 | `team.html` | Our Team |
 | `projects.html` | Projects |
 | `contact.html` | Contact (with Google Map) |
-| `staff.html` | Staff portal — "coming soon" (the Instructor Area needs a database first) |
+| `staff.html` | Old address — forwards to the staff portal |
+| `portal/` | Staff portal: login, session notes, course proposals, progress reports (see `PORTAL-SETUP.md`) |
+| `supabase/schema.sql` | Database tables and security rules for the portal |
 | `404.html` | Page-not-found |
 | `assets/img/` | Logo, photos, team portraits |
 | `assets/css/site.css` | Header, footer, mobile layout |
-| `assets/js/site.js` | Forms send the enquiry to Rising Stars on WhatsApp (0330 1030248) |
+| `assets/js/site.js` | Forms send the enquiry to Rising Stars on WhatsApp (0333 3447861) |
 | `CNAME` | Tells GitHub Pages to serve the site on risingstarsen.org |
 
 ## 1. Put the files in place (Windows)

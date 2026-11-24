@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Staff login — Rising Stars</title>
+<link rel="icon" type="image/png" href="../assets/img/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&amp;family=Nunito+Sans:wght@400;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="portal.css">
+</head>
+<body>
+<main class="login-wrap">
+<form class="login-card" id="login" novalidate>
+<img src="../assets/img/logo.png" alt="Rising Stars">
+<h1>Staff login</h1>
+<p>For Rising Stars instructors and coordinators.</p>
+<div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required></div>
+<div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required></div>
+<p class="error-msg" id="err" role="alert"></p>
+<button class="btn" type="submit" id="go">Sign in</button>
+<button class="btn secondary small" type="button" id="forgot">Forgot password?</button>
+<a href="../index.html" style="text-align:center;font-weight:700;font-size:14px">← Back to website</a>
+</form>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="portal.js"></script>
+<script>
+(async function () {
+  if (!RS.configured) { RS.notConfigured(); return; }
+  var db = RS.db, err = RS.$('#err');
+  var s = (await db.auth.getSession()).data.session;
+  if (s) { location.replace('dashboard.html'); return; }
+
+  RS.$('#login').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    err.textContent = '';
+    var email = RS.$('#email').value.trim(), password = RS.$('#password').value;
+    if (!email || !password) { err.textContent = 'Please enter your email and password.'; return; }
+    var btn = RS.$('#go'); btn.disabled = true; btn.textContent = 'Signing in…';
+    var res = await db.auth.signInWithPassword({ email: email, password: password });
+    if (res.error) {
+      err.textContent = 'Email or password is not correct.';
+      btn.disabled = false; btn.textContent = 'Sign in';
+      return;
+    }
+    location.replace('dashboard.html');
+  });
+
+  RS.$('#forgot').addEventListener('click', async function () {
+    var email = RS.$('#email').value.trim();
+    if (!email) { err.textContent = 'Type your email above first, then press Forgot password.'; return; }
+    var res = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname.replace(/index\.html$/, '') + 'reset.html' });
+    err.textContent = '';
+    RS.toast(res.error ? 'Could not send the email. Please ask the administrator.' : 'Password reset link sent to ' + email, !!res.error);
+  });
+})();
+</script>
+</body>
+</html>

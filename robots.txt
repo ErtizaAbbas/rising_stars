@@ -1,3 +1,4 @@
 User-agent: *
 Disallow: /staff.html
+Disallow: /portal/
 Sitemap: https://risingstarsen.org/sitemap.xml

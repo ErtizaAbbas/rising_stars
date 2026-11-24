@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Course proposal — Rising Stars staff portal</title>
+<link rel="icon" type="image/png" href="../assets/img/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&amp;family=Nunito+Sans:wght@400;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="portal.css">
+</head>
+<body>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main class="content">
+<div class="page-head">
+<div><span class="eyebrow">Template</span><h1>Course proposal</h1></div>
+<span id="status-pill"></span>
+</div>
+<div class="cols">
+<div class="main-col">
+<fieldset id="form" style="border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:20px;min-width:0">
+<section class="card">
+<h2><span class="num">1</span>The course</h2>
+<div class="field"><label for="title">Course title</label><input id="title" type="text" placeholder="e.g. Social skills group for ages 6–10"></div>
+<div class="field"><span class="label" id="track-l">Track</span><div class="choices" id="track" role="group" aria-labelledby="track-l"></div></div>
+<div class="grid">
+<div class="field"><label for="audience">Who it is for</label><input id="audience" type="text" placeholder="e.g. Children aged 6–10 with autism"></div>
+<div class="field"><label for="duration">Length</label><input id="duration" type="text" placeholder="e.g. 10 weekly sessions"></div>
+<div class="field"><label for="fee">Suggested fee (PKR)</label><input id="fee" type="number" min="0" step="500"></div>
+</div>
+</section>
+<section class="card">
+<h2><span class="num">2</span>Learning outcomes</h2>
+<div class="field"><label for="outcomes">3–6 things participants will be able to do (one per line)</label><textarea id="outcomes" rows="6"></textarea></div>
+</section>
+<section class="card">
+<h2><span class="num">3</span>Delivery</h2>
+<div class="field"><label for="materials">Materials, resources and staff needed</label><textarea id="materials" rows="4"></textarea></div>
+</section>
+</fieldset>
+<section class="card" id="review-box" hidden>
+<h2>Coordinator review</h2>
+<div class="field"><label for="comment">Comment to the instructor</label><textarea id="comment" rows="3"></textarea></div>
+<div class="btn-row"><button class="btn" type="button" id="approve">Approve</button><button class="btn danger" type="button" id="return">Return for changes</button></div>
+</section>
+<section class="card" id="comment-box" hidden><h2>Reviewer comment</h2><p id="comment-text" style="margin:0"></p></section>
+</div>
+<aside class="side-col">
+<section class="card">
+<h2>Next step</h2>
+<p style="margin:0;font-size:15px;line-height:1.6;color:#34404F">Save a draft anytime. When it is ready, submit it — Mrs. Sarwat or a coordinator will approve it or send it back with comments.</p>
+<div class="btn-row no-print" id="edit-buttons" style="flex-direction:column">
+<button class="btn" type="button" id="submit">Submit for review</button>
+<button class="btn secondary" type="button" id="save">Save draft</button>
+</div>
+<button class="btn secondary small no-print" type="button" onclick="window.print()">Print / save as PDF</button>
+</section>
+</aside>
+</div>
+</main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="portal.js"></script>
+<script>
+(async function () {
+  var me = await RS.requireAuth({ active: 'proposal' });
+  var db = RS.db, $ = RS.$, id = RS.param('id');
+  var state = { track: 'child', status: 'draft', row: null }, editable = true;
+  var TRACKS = [['child', 'Child programme'], ['parent', 'Parents & caregivers'], ['school', 'Schools & professionals']];
+
+  function renderTrack() {
+    RS.pillGroup($('#track'), TRACKS.map(function (t) { return { value: t[0], label: t[1] }; }), state.track, function (v) { if (editable) { state.track = v; renderTrack(); } });
+    $('#status-pill').innerHTML = RS.statusPill(state.status);
+  }
+
+  if (id) {
+    var res = await db.from('course_proposals').select('*').eq('id', id).single();
+    if (res.error || !res.data) { RS.toast('Could not open this proposal.', true); return; }
+    var p = state.row = res.data;
+    state.track = p.track; state.status = p.status;
+    $('#title').value = p.title; $('#audience').value = p.audience || ''; $('#duration').value = p.duration || '';
+    $('#fee').value = p.fee_pkr == null ? '' : p.fee_pkr; $('#outcomes').value = p.outcomes || ''; $('#materials').value = p.materials || '';
+    editable = p.instructor_id === me.user.id && (p.status === 'draft' || p.status === 'returned');
+    if (p.reviewer_comment) { $('#comment-box').hidden = false; $('#comment-text').textContent = p.reviewer_comment; }
+    if (me.isCoord && p.status === 'submitted') { $('#review-box').hidden = false; $('#comment').value = p.reviewer_comment || ''; }
+  }
+  if (!editable) { $('#form').disabled = true; $('#edit-buttons').hidden = true; }
+  renderTrack();
+
+  async function save(status) {
+    var row = {
+      title: $('#title').value.trim(), track: state.track, audience: $('#audience').value.trim(),
+      duration: $('#duration').value.trim(), fee_pkr: $('#fee').value === '' ? null : parseInt($('#fee').value, 10),
+      outcomes: $('#outcomes').value.trim(), materials: $('#materials').value.trim(), status: status
+    };
+    if (!row.title) { RS.toast('Please give the course a title.', true); return; }
+    if (status === 'submitted' && !row.outcomes) { RS.toast('Add the learning outcomes before submitting.', true); return; }
+    var res = state.row
+      ? await db.from('course_proposals').update(row).eq('id', state.row.id).select().single()
+      : await db.from('course_proposals').insert(row).select().single();
+    if (res.error) { RS.toast('Not saved: ' + res.error.message, true); return; }
+    state.row = res.data; state.status = res.data.status; renderTrack();
+    if (!id) history.replaceState(null, '', 'proposal.html?id=' + res.data.id);
+    if (status === 'submitted') { editable = false; $('#form').disabled = true; $('#edit-buttons').hidden = true; RS.toast('Submitted for review'); }
+    else RS.toast('Draft saved');
+  }
+  $('#save').addEventListener('click', function () { save('draft'); });
+  $('#submit').addEventListener('click', function () { save('submitted'); });
+
+  async function review(status) {
+    var res = await db.from('course_proposals').update({ status: status, reviewer_comment: $('#comment').value.trim() || null }).eq('id', state.row.id).select().single();
+    if (res.error) { RS.toast('Not saved: ' + res.error.message, true); return; }
+    state.status = status; renderTrack(); $('#review-box').hidden = true;
+    RS.toast(status === 'approved' ? 'Approved' : 'Returned to the instructor');
+  }
+  $('#approve').addEventListener('click', function () { review('approved'); });
+  $('#return').addEventListener('click', function () { review('returned'); });
+})();
+</script>
+</body>
+</html>

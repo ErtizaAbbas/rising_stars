@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Dashboard — Rising Stars staff portal</title>
+<link rel="icon" type="image/png" href="../assets/img/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&amp;family=Nunito+Sans:wght@400;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="portal.css">
+</head>
+<body>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main class="content">
+<div class="page-head">
+<div><span class="eyebrow" id="hello">Welcome</span><h1>Dashboard</h1></div>
+<div class="btn-row"><a class="btn" href="note.html">+ New session note</a><a class="btn secondary" href="proposal.html">+ Course proposal</a></div>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<section class="card" id="review-card" hidden>
+<h2>Awaiting your review</h2>
+<div class="table-wrap"><table><thead><tr><th>Type</th><th>Student / title</th><th>By</th><th>Date</th><th></th></tr></thead><tbody id="review"></tbody></table></div>
+</section>
+
+<section class="card">
+<h2 id="notes-title">My session notes</h2>
+<div class="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Therapy</th><th>Status</th><th></th></tr></thead><tbody id="notes"></tbody></table></div>
+</section>
+
+<section class="card">
+<h2>My course proposals</h2>
+<div class="table-wrap"><table><thead><tr><th>Title</th><th>Track</th><th>Updated</th><th>Status</th><th></th></tr></thead><tbody id="proposals"></tbody></table></div>
+</section>
+</main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="portal.js"></script>
+<script>
+(async function () {
+  var me = await RS.requireAuth({ active: 'dashboard' });
+  var db = RS.db, esc = RS.esc;
+  RS.$('#hello').textContent = 'Welcome, ' + me.profile.full_name;
+
+  var notesRes = await db.from('session_notes')
+    .select('id, session_date, therapy, status, instructor_id, students(student_code, first_name)')
+    .eq('instructor_id', me.user.id).order('session_date', { ascending: false }).limit(25);
+  var propRes = await db.from('course_proposals')
+    .select('id, title, track, status, updated_at').eq('instructor_id', me.user.id)
+    .order('updated_at', { ascending: false }).limit(25);
+  var notes = notesRes.data || [], props = propRes.data || [];
+
+  var monthStart = RS.today().slice(0, 8) + '01';
+  var stats = [
+    [notes.filter(function (n) { return n.session_date >= monthStart; }).length, 'Notes this month'],
+    [notes.filter(function (n) { return n.status === 'draft'; }).length, 'Drafts to finish'],
+    [notes.filter(function (n) { return n.status === 'returned'; }).length + props.filter(function (p) { return p.status === 'returned'; }).length, 'Returned for changes'],
+    [props.length, 'Course proposals']
+  ];
+  RS.$('#stats').innerHTML = stats.map(function (s) { return '<div class="stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('');
+
+  function student(n) { return n.students ? esc(n.students.student_code + ' · ' + n.students.first_name) : ''; }
+  function action(status, own) { return (own && (status === 'draft' || status === 'returned')) ? 'Edit' : 'View'; }
+
+  RS.$('#notes').innerHTML = notes.length ? notes.map(function (n) {
+    return '<tr><td>' + RS.fmtDate(n.session_date) + '</td><td><strong>' + student(n) + '</strong></td><td>' + esc(n.therapy) + '</td><td>' + RS.statusPill(n.status) + '</td><td><a href="note.html?id=' + n.id + '"><strong>' + action(n.status, true) + '</strong></a></td></tr>';
+  }).join('') : '<tr><td colspan="5" class="empty">No session notes yet. Start with “New session note”.</td></tr>';
+
+  var TRACK = { child: 'Child programme', parent: 'Parents & caregivers', school: 'Schools & professionals' };
+  RS.$('#proposals').innerHTML = props.length ? props.map(function (p) {
+    return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(TRACK[p.track] || p.track) + '</td><td>' + RS.fmtDate(p.updated_at) + '</td><td>' + RS.statusPill(p.status) + '</td><td><a href="proposal.html?id=' + p.id + '"><strong>' + action(p.status, true) + '</strong></a></td></tr>';
+  }).join('') : '<tr><td colspan="5" class="empty">No course proposals yet.</td></tr>';
+
+  if (me.isCoord) {
+    var rn = await db.from('session_notes').select('id, session_date, therapy, profiles(full_name), students(student_code, first_name)').eq('status', 'submitted').order('session_date');
+    var rp = await db.from('course_proposals').select('id, title, updated_at, profiles(full_name)').eq('status', 'submitted').order('updated_at');
+    var rows = (rn.data || []).map(function (n) {
+      return '<tr><td>' + RS.statusPill('submitted').replace('Awaiting review', 'Session note') + '</td><td><strong>' + student(n) + '</strong> · ' + esc(n.therapy) + '</td><td>' + esc(n.profiles ? n.profiles.full_name : '') + '</td><td>' + RS.fmtDate(n.session_date) + '</td><td><a href="note.html?id=' + n.id + '"><strong>Review</strong></a></td></tr>';
+    }).concat((rp.data || []).map(function (p) {
+      return '<tr><td><span class="pill pill-blue">Course proposal</span></td><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(p.profiles ? p.profiles.full_name : '') + '</td><td>' + RS.fmtDate(p.updated_at) + '</td><td><a href="proposal.html?id=' + p.id + '"><strong>Review</strong></a></td></tr>';
+    }));
+    RS.$('#review-card').hidden = false;
+    RS.$('#review').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="5" class="empty">Nothing waiting for review.</td></tr>';
+  }
+})();
+</script>
+</body>
+</html>

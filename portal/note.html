@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Session note — Rising Stars staff portal</title>
+<link rel="icon" type="image/png" href="../assets/img/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&amp;family=Nunito+Sans:wght@400;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="portal.css">
+</head>
+<body>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main class="content">
+<div class="page-head">
+<div><span class="eyebrow">Template · takes about 3 minutes</span><h1>Session note</h1></div>
+<span id="status-pill"></span>
+</div>
+
+<div class="cols">
+<div class="main-col">
+<fieldset id="form" style="border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:20px;min-width:0">
+
+<section class="card">
+<h2><span class="num">1</span>Session details</h2>
+<div class="grid">
+<div class="field"><label for="student">Student</label><select id="student"></select></div>
+<div class="field"><label for="date">Date</label><input id="date" type="date"></div>
+<div class="field"><label for="therapy">Therapy</label><select id="therapy"></select></div>
+<div class="field"><label for="duration">Duration</label><select id="duration"><option value="30">30 minutes</option><option value="45" selected>45 minutes</option><option value="60">60 minutes</option></select></div>
+</div>
+<div class="field"><span class="label" id="att-l">Attendance</span><div class="choices" id="attendance" role="group" aria-labelledby="att-l"></div></div>
+</section>
+
+<section class="card">
+<h2><span class="num">2</span>Goals worked on</h2>
+<div class="scale"><span><b>1</b> Not yet</span><span><b>2</b> Emerging</span><span><b>3</b> With help</span><span><b>4</b> Mostly independent</span><span><b>5</b> Independent</span></div>
+<div id="goals" style="display:flex;flex-direction:column;gap:14px"></div>
+<p class="hint">Goals come from the student's IEP. Leave a goal unrated if you did not work on it today.</p>
+</section>
+
+<section class="card">
+<h2><span class="num">3</span>How the session went</h2>
+<div class="field"><span class="label" id="eng-l">Engagement</span><div class="choices" id="engagement" role="group" aria-labelledby="eng-l"></div></div>
+<div class="grid-2">
+<div class="field"><label for="activities">Activities &amp; materials used</label><textarea id="activities" rows="3" placeholder="e.g. picture cards, bead threading, turn-taking game"></textarea></div>
+<div class="field"><label for="observations">Observations &amp; behaviour</label><textarea id="observations" rows="3" placeholder="What went well, what was difficult, any triggers"></textarea></div>
+</div>
+</section>
+
+<section class="card">
+<h2><span class="num">4</span>Next steps</h2>
+<div class="grid-2">
+<div class="field"><label for="home">Home practice for parents</label><textarea id="home" rows="3" placeholder="One simple activity to practise at home"></textarea></div>
+<div class="field"><label for="next">Plan for next session</label><textarea id="next" rows="3" placeholder="What to focus on or change next time"></textarea></div>
+</div>
+<label class="check"><input type="checkbox" id="share" checked>Share the home practice task with parents</label>
+<label class="check"><input type="checkbox" id="flag">Flag for coordinator (concern or incident)</label>
+</section>
+</fieldset>
+
+<section class="card" id="review-box" hidden>
+<h2>Coordinator review</h2>
+<div class="field"><label for="comment">Comment to the instructor</label><textarea id="comment" rows="3"></textarea></div>
+<div class="btn-row"><button class="btn" type="button" id="approve">Approve</button><button class="btn danger" type="button" id="return">Return for changes</button></div>
+</section>
+<section class="card" id="comment-box" hidden><h2>Reviewer comment</h2><p id="comment-text" style="margin:0"></p></section>
+</div>
+
+<aside class="side-col">
+<section class="card">
+<h2>Summary</h2>
+<div class="row-between"><span>Student</span><strong id="s-student">–</strong></div>
+<div class="row-between"><span>Attendance</span><strong id="s-att">–</strong></div>
+<div class="row-between"><span>Goals rated</span><strong id="s-rated">0</strong></div>
+<div class="avg-box"><span class="eyebrow">AVERAGE PROGRESS</span><b><span id="s-avg">–</span> <small style="font-size:18px;color:#4A5668">/ 5</small></b><div class="bar"><i id="s-bar" style="width:0"></i></div></div>
+<div class="btn-row no-print" id="edit-buttons" style="flex-direction:column">
+<button class="btn" type="button" id="submit">Submit for review</button>
+<button class="btn secondary" type="button" id="save">Save draft</button>
+</div>
+<button class="btn secondary small no-print" type="button" onclick="window.print()">Print / save as PDF</button>
+</section>
+<section class="info"><h3>Where this goes</h3>Saved to the student's record in the Rising Stars database. Goal ratings feed the progress reports. Only you and coordinators can see it.</section>
+</aside>
+</div>
+</main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="portal.js"></script>
+<script>
+(async function () {
+  var me = await RS.requireAuth({ active: 'note' });
+  var db = RS.db, $ = RS.$, esc = RS.esc;
+  var id = RS.param('id');
+  var state = { attendance: 'present', engagement: 'good', ratings: {}, goals: [], status: 'draft', note: null };
+
+  RS.THERAPIES.forEach(function (t) { var o = document.createElement('option'); o.textContent = t; $('#therapy').appendChild(o); });
+  $('#date').value = RS.today();
+
+  var stu = await db.from('students').select('id, student_code, first_name').eq('active', true).order('student_code');
+  var students = stu.data || [];
+  $('#student').innerHTML = '<option value="">Choose a student…</option>' + students.map(function (s) {
+    return '<option value="' + s.id + '">' + esc(s.student_code + ' · ' + s.first_name) + '</option>';
+  }).join('');
+
+  var ATT = [['present', 'Present'], ['late', 'Late'], ['absent', 'Absent'], ['cancelled', 'Cancelled']];
+  var ENG = [['low', 'Low'], ['okay', 'Okay'], ['good', 'Good'], ['excellent', 'Excellent']];
+  var COLORS = ['', '#E5484D', '#E8711C', '#B07A00', '#2E9E5B', '#1F5E96'];
+  var editable = true;
+
+  function renderChoices() {
+    RS.pillGroup($('#attendance'), ATT.map(function (a) { return { value: a[0], label: a[1] }; }), state.attendance, function (v) { if (editable) { state.attendance = v; renderChoices(); summary(); } });
+    RS.pillGroup($('#engagement'), ENG.map(function (a) { return { value: a[0], label: a[1] }; }), state.engagement, function (v) { if (editable) { state.engagement = v; renderChoices(); } });
+  }
+
+  function renderGoals() {
+    var box = $('#goals');
+    if (!state.goals.length) {
+      box.innerHTML = '<p class="empty">' + ($('#student').value ? 'No IEP goals saved for this student yet. A coordinator can add them under “Students & goals”.' : 'Choose a student to load their IEP goals.') + '</p>';
+      return;
+    }
+    box.innerHTML = '';
+    state.goals.forEach(function (g) {
+      var r = state.ratings[g.id] || 0;
+      var div = document.createElement('div');
+      div.className = 'goal';
+      div.innerHTML = '<div class="goal-head"><span>' + esc(g.goal_text) + '</span><span class="pill pill-blue">' + esc(g.area) + '</span></div><div style="display:flex;flex-wrap:wrap;align-items:center"><div class="choices square" role="group" aria-label="Progress for ' + esc(g.area) + '"></div><span class="goal-level">' + (r ? RS.LEVELS[r] : 'Not rated') + '</span></div>';
+      RS.pillGroup(div.querySelector('.choices'), [1, 2, 3, 4, 5].map(function (n) {
+        return { value: n, label: String(n), aria: n + ' — ' + RS.LEVELS[n], color: COLORS[n] };
+      }), r, function (v) {
+        if (!editable) return;
+        state.ratings[g.id] = state.ratings[g.id] === v ? 0 : v;
+        renderGoals(); summary();
+      });
+      box.appendChild(div);
+    });
+  }
+
+  function summary() {
+    var opt = $('#student').selectedOptions[0];
+    $('#s-student').textContent = opt && opt.value ? opt.textContent : '–';
+    $('#s-att').textContent = (ATT.find(function (a) { return a[0] === state.attendance; }) || [])[1] || '–';
+    var vals = Object.keys(state.ratings).map(function (k) { return state.ratings[k]; }).filter(Boolean);
+    var avg = vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length : 0;
+    $('#s-rated').textContent = vals.length + ' of ' + state.goals.length;
+    $('#s-avg').textContent = avg ? avg.toFixed(1) : '–';
+    $('#s-bar').style.width = Math.round(avg / 5 * 100) + '%';
+    $('#status-pill').innerHTML = RS.statusPill(state.status);
+  }
+
+  async function loadGoals(studentId, saved) {
+    state.goals = [];
+    if (studentId) {
+      var g = await db.from('iep_goals').select('id, area, goal_text').eq('student_id', studentId).eq('active', true).order('area');
+      state.goals = g.data || [];
+    }
+    // keep goals that were rated in a saved note even if later archived
+    (saved || []).forEach(function (s) {
+      if (!state.goals.some(function (g) { return g.id === s.goal_id; })) state.goals.push({ id: s.goal_id, area: s.area, goal_text: s.goal_text });
+    });
+    renderGoals(); summary();
+  }
+
+  $('#student').addEventListener('change', function () { state.ratings = {}; loadGoals(this.value); });
+
+  // Load an existing note
+  if (id) {
+    var res = await db.from('session_notes').select('*').eq('id', id).single();
+    if (res.error || !res.data) { RS.toast('Could not open this note.', true); return; }
+    var n = state.note = res.data;
+    state.status = n.status; state.attendance = n.attendance; state.engagement = n.engagement || 'good';
+    (n.goal_ratings || []).forEach(function (r) { state.ratings[r.goal_id] = r.rating; });
+    if (!students.some(function (s) { return s.id === n.student_id; })) {
+      var one = await db.from('students').select('id, student_code, first_name').eq('id', n.student_id).single();
+      if (one.data) $('#student').insertAdjacentHTML('beforeend', '<option value="' + one.data.id + '">' + esc(one.data.student_code + ' · ' + one.data.first_name) + '</option>');
+    }
+    $('#student').value = n.student_id; $('#date').value = n.session_date; $('#therapy').value = n.therapy;
+    $('#duration').value = String(n.duration_min); $('#activities').value = n.activities || ''; $('#observations').value = n.observations || '';
+    $('#home').value = n.home_practice || ''; $('#next').value = n.next_plan || '';
+    $('#share').checked = n.share_with_parents; $('#flag').checked = n.flag_coordinator;
+    var own = n.instructor_id === me.user.id;
+    editable = own && (n.status === 'draft' || n.status === 'returned');
+    if (n.reviewer_comment) { $('#comment-box').hidden = false; $('#comment-text').textContent = n.reviewer_comment; }
+    if (me.isCoord && n.status === 'submitted') { $('#review-box').hidden = false; $('#comment').value = n.reviewer_comment || ''; }
+    await loadGoals(n.student_id, n.goal_ratings);
+  } else {
+    var pre = RS.param('student');
+    if (pre) { $('#student').value = pre; await loadGoals(pre); }
+  }
+  if (!editable) { $('#form').disabled = true; $('#edit-buttons').hidden = true; }
+  renderChoices(); renderGoals(); summary();
+
+  function collect(status) {
+    return {
+      student_id: $('#student').value, session_date: $('#date').value, therapy: $('#therapy').value,
+      duration_min: parseInt($('#duration').value, 10), attendance: state.attendance, engagement: state.engagement,
+      goal_ratings: state.goals.filter(function (g) { return state.ratings[g.id]; }).map(function (g) {
+        return { goal_id: g.id, area: g.area, goal_text: g.goal_text, rating: state.ratings[g.id] };
+      }),
+      activities: $('#activities').value.trim(), observations: $('#observations').value.trim(),
+      home_practice: $('#home').value.trim(), next_plan: $('#next').value.trim(),
+      share_with_parents: $('#share').checked, flag_coordinator: $('#flag').checked, status: status
+    };
+  }
+
+  async function save(status) {
+    var row = collect(status);
+    if (!row.student_id) { RS.toast('Please choose a student.', true); return; }
+    if (!row.session_date) { RS.toast('Please choose the session date.', true); return; }
+    if (status === 'submitted' && row.attendance !== 'absent' && row.attendance !== 'cancelled' && !row.goal_ratings.length) {
+      RS.toast('Rate at least one goal before submitting.', true); return;
+    }
+    $('#save').disabled = $('#submit').disabled = true;
+    var res = state.note
+      ? await db.from('session_notes').update(row).eq('id', state.note.id).select().single()
+      : await db.from('session_notes').insert(row).select().single();
+    $('#save').disabled = $('#submit').disabled = false;
+    if (res.error) { RS.toast('Not saved: ' + res.error.message, true); return; }
+    state.note = res.data; state.status = res.data.status;
+    if (!id) history.replaceState(null, '', 'note.html?id=' + res.data.id);
+    summary();
+    if (status === 'submitted') {
+      RS.toast('Submitted for review');
+      editable = false; $('#form').disabled = true; $('#edit-buttons').hidden = true;
+    } else RS.toast('Draft saved');
+  }
+  $('#save').addEventListener('click', function () { save('draft'); });
+  $('#submit').addEventListener('click', function () { save('submitted'); });
+
+  async function review(status) {
+    var res = await db.from('session_notes').update({ status: status, reviewer_comment: $('#comment').value.trim() || null }).eq('id', state.note.id).select().single();
+    if (res.error) { RS.toast('Not saved: ' + res.error.message, true); return; }
+    state.status = status; summary(); $('#review-box').hidden = true;
+    RS.toast(status === 'approved' ? 'Approved' : 'Returned to the instructor');
+  }
+  $('#approve').addEventListener('click', function () { review('approved'); });
+  $('#return').addEventListener('click', function () { review('returned'); });
+})();
+</script>
+</body>
+</html>

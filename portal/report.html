@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Progress report — Rising Stars staff portal</title>
+<link rel="icon" type="image/png" href="../assets/img/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&amp;family=Nunito+Sans:wght@400;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="portal.css">
+</head>
+<body>
+<div class="layout">
+<aside id="sidebar"></aside>
+<main class="content">
+<div class="page-head no-print"><div><span class="eyebrow">Built from session notes</span><h1>Progress reports</h1></div></div>
+
+<section class="card no-print">
+<h2>Generate a report</h2>
+<div class="grid">
+<div class="field"><label for="student">Student</label><select id="student"></select></div>
+<div class="field"><label for="from">From</label><input id="from" type="date"></div>
+<div class="field"><label for="to">To</label><input id="to" type="date"></div>
+</div>
+<div class="btn-row"><button class="btn" type="button" id="go">Generate report</button></div>
+<p class="hint" id="scope-hint"></p>
+</section>
+
+<section class="report-sheet" id="sheet" hidden></section>
+</main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="portal.js"></script>
+<script>
+(async function () {
+  var me = await RS.requireAuth({ active: 'report' });
+  var db = RS.db, $ = RS.$, esc = RS.esc;
+  $('#scope-hint').textContent = me.isCoord
+    ? 'As a coordinator, the report includes session notes from every therapist.'
+    : 'The report includes your own session notes for this student.';
+
+  var stu = await db.from('students').select('id, student_code, first_name, date_of_birth').order('student_code');
+  var students = stu.data || [];
+  $('#student').innerHTML = '<option value="">Choose a student…</option>' + students.map(function (s) {
+    return '<option value="' + s.id + '">' + esc(s.student_code + ' · ' + s.first_name) + '</option>';
+  }).join('');
+  var t = new Date(); var f = new Date(t); f.setMonth(f.getMonth() - 3);
+  $('#to').value = RS.today(); $('#from').value = f.toISOString().slice(0, 10);
+
+  $('#go').addEventListener('click', async function () {
+    var sid = $('#student').value;
+    if (!sid) { RS.toast('Choose a student first.', true); return; }
+    var res = await db.from('session_notes')
+      .select('session_date, therapy, attendance, engagement, goal_ratings, home_practice, status, profiles(full_name)')
+      .eq('student_id', sid).gte('session_date', $('#from').value).lte('session_date', $('#to').value)
+      .neq('status', 'draft').order('session_date');
+    if (res.error) { RS.toast(res.error.message, true); return; }
+    render(students.find(function (s) { return s.id === sid; }), res.data || []);
+  });
+
+  function render(s, notes) {
+    var attended = notes.filter(function (n) { return n.attendance === 'present' || n.attendance === 'late'; }).length;
+    var therapies = Array.from(new Set(notes.map(function (n) { return n.therapy; })));
+    var therapists = Array.from(new Set(notes.map(function (n) { return n.profiles ? n.profiles.full_name : ''; }).filter(Boolean)));
+    var goals = {};
+    notes.forEach(function (n) {
+      (n.goal_ratings || []).forEach(function (r) {
+        var g = goals[r.goal_id] = goals[r.goal_id] || { area: r.area, text: r.goal_text, ratings: [] };
+        g.ratings.push(r.rating);
+      });
+    });
+    var rows = Object.keys(goals).map(function (k) {
+      var g = goals[k], n = g.ratings.length;
+      var avg = g.ratings.reduce(function (a, b) { return a + b; }, 0) / n;
+      var first = g.ratings[0], last = g.ratings[n - 1];
+      var trend = last > first ? '<span class="pill pill-green">Improving</span>' : last < first ? '<span class="pill pill-red">Needs support</span>' : '<span class="pill pill-blue">Steady</span>';
+      return '<tr><td><strong>' + esc(g.area) + '</strong></td><td>' + esc(g.text) + '</td><td>' + n + '</td><td>' + first + ' → ' + last + '<br><small>' + esc(RS.LEVELS[last]) + '</small></td><td style="min-width:140px"><div class="bar"><i style="width:' + Math.round(avg / 5 * 100) + '%"></i></div><small>' + avg.toFixed(1) + ' / 5</small></td><td>' + trend + '</td></tr>';
+    });
+    var home = notes.map(function (n) { return n.home_practice; }).filter(Boolean).slice(-3);
+
+    var sheet = $('#sheet');
+    sheet.hidden = false;
+    sheet.innerHTML =
+      '<div class="report-head"><div><h2 style="font-size:26px;color:#1F5E96">Progress report</h2><div class="eyebrow">' + esc(s.student_code + ' · ' + s.first_name) + ' · ' + RS.fmtDate($('#from').value) + ' – ' + RS.fmtDate($('#to').value) + '</div></div><img src="../assets/img/logo.png" alt="Rising Stars"></div>' +
+      '<div class="stats"><div class="stat" style="background:#F3F8FD"><b>' + notes.length + '</b><span>Sessions recorded</span></div><div class="stat" style="background:#F3F8FD"><b>' + attended + '</b><span>Sessions attended</span></div><div class="stat" style="background:#F3F8FD"><b>' + rows.length + '</b><span>Goals tracked</span></div></div>' +
+      '<div><span class="label">Therapies:</span> ' + esc(therapies.join(', ') || '–') + (therapists.length ? ' &nbsp;·&nbsp; <span class="label">Therapists:</span> ' + esc(therapists.join(', ')) : '') + '</div>' +
+      (rows.length ? '<div class="table-wrap"><table><thead><tr><th>Area</th><th>Goal</th><th>Sessions</th><th>First → latest</th><th>Average</th><th>Trend</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
+                   : '<p class="empty">No submitted session notes with goal ratings in this period.</p>') +
+      (home.length ? '<div><h3 style="font-size:19px;margin-bottom:8px">Recent home practice</h3><ul style="margin:0;padding-left:20px;line-height:1.7">' + home.map(function (h) { return '<li>' + esc(h) + '</li>'; }).join('') + '</ul></div>' : '') +
+      '<div class="field"><label for="comments">Therapist comments and next steps</label><textarea id="comments" rows="4" placeholder="Written here for the printed copy — not saved."></textarea></div>' +
+      '<div class="btn-row no-print"><button class="btn yellow" type="button" onclick="window.print()">Print / save as PDF</button></div>' +
+      '<p class="hint">Rating scale: 1 Not yet · 2 Emerging · 3 With help · 4 Mostly independent · 5 Independent. Rising Stars School for Special Needs &amp; Rehabilitation Center, B 179, Block H, North Nazimabad, Karachi.</p>';
+  }
+})();
+</script>
+</body>
+</html>

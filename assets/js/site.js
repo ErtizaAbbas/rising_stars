@@ -1,6 +1,6 @@
 // Rising Stars — small site helpers (no external libraries)
 (function () {
-  var WHATSAPP = '923301030248';
+  var WHATSAPP = '923333447861';
 
   // Keep the footer year current
   document.querySelectorAll('[data-year]').forEach(function (el) {

@@ -1,0 +1,5 @@
+rising-stars/
+__pycache__/
+.vscode/
+Thumbs.db
+.DS_Store
